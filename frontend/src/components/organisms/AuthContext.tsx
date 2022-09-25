@@ -1,6 +1,6 @@
 import React from 'react';
-import httpClient from '../../lib/http-client';
 import { getErrorMessages } from '../../lib';
+import { useCustomGet } from '../clients/HttpClientHooks';
 import { Login } from '../templates/Login';
 
 const { REACT_APP_BACK_HOST: BACK_HOST } = process.env;
@@ -44,7 +44,7 @@ export const useAuth = () => {
 
 /**
  * Do not try this at home: trying to modify a state of a component outside React is not recommended!
- * We needed a convenient way to expire frontend session when the backend session expire.
+ * We needed a convenient way to expire frontend session  .
  * (frontend session = user property in this state)
  * At page load, the state of the backend session is synced with a call to /users/me:
  * if we get a 401 there is no active session, if not the user is connected.
@@ -61,6 +61,13 @@ export const useAuth = () => {
  * @returns {*}
  */
 export let resetAuthContext = (): void => {};
+
+/**
+ * Not a satisfaying solution? Other solutions
+ * - Add a token expiration time for token from backend, if token is expired, possible to renew it silently
+ * - Actually, to check authentication, we generate an error 401 with /me, would be better to stop volontary generate error => how?
+ * Other hint: use an isAuthenticated, property, check this property when auth required
+ */
 
 export class AuthStore extends React.Component {
   _isMounted: boolean;
@@ -93,28 +100,25 @@ export class AuthStore extends React.Component {
     this._isMounted = false;
   }
 
-  login = () => {
+  login = async () => {
     this.setState({ isLoading: true });
-    return httpClient
-      .get(`${BACK_HOST}/api/users/me`)
-      .then((response) => {
-        if (this._isMounted) {
-          this.setState({ user: response.data, isLoading: false });
-        }
-      })
-      .catch((e) => {
-        if (this._isMounted && !(e.response && e.response.status === 401)) {
-          this.setState({
-            user: null,
-            isLoading: false,
-            connectionError: getErrorMessages(e).join(' '),
-          });
-        }
+    const res = await useCustomGet(`${BACK_HOST}/api/users/me`);
+
+    // handle error resetting context
+    if (res.connectionError && res.connectionError.response.status === 401) {
+      this.setState({
+        user: null,
+        isLoading: false,
+        connectionError: getErrorMessages(res.connectionError).join(' '),
       });
+    } else {
+      this.setState({ user: res.data, isLoading: false });
+    }
   };
 
   logout = () => {
     // will also empty user from state by reloading the entire app
+    // incomplete checkout
     window.location.href = `${BACK_HOST}/api/users/sign_out`;
   };
 
@@ -145,6 +149,7 @@ export class AuthStore extends React.Component {
   }
 }
 
+// i like this component that let's to know when authentication is required
 export const AuthRequired = ({
   children,
 }: {
